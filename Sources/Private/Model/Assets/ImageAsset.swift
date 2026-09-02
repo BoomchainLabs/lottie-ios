@@ -8,6 +8,10 @@
 import CoreGraphics
 import Foundation
 
+#if canImport(Darwin)
+import Darwin
+#endif
+
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -102,7 +106,10 @@ extension Data {
       !options.contains(DataURLReadOptions.legacy)
     {
       let encodedString = String(trimmedDataString[base64Range.upperBound...])
-      self.init(base64Encoded: encodedString)
+      guard let decodedData = Base64DataURLDecoder().decode(encodedString) else {
+        return nil
+      }
+      self = decodedData
     } else {
       try? self.init(contentsOf: url)
     }
@@ -116,6 +123,62 @@ extension Data {
 
     let rawValue: Int
 
+  }
+
+}
+
+// MARK: - Base64DataURLDecoder
+
+/// Guards Base64 Data URL decoding when the estimated payload exceeds available process memory.
+struct Base64DataURLDecoder {
+
+  // MARK: Lifecycle
+
+  init(availableMemoryByteCount: @escaping () -> Int? = Base64DataURLDecoder.platformAvailableMemoryByteCount) {
+    self.availableMemoryByteCount = availableMemoryByteCount
+  }
+
+  // MARK: Internal
+
+  let availableMemoryByteCount: () -> Int?
+
+  static func platformAvailableMemoryByteCount() -> Int? {
+    #if targetEnvironment(simulator)
+    return nil
+    #elseif os(iOS) || os(tvOS) || os(visionOS)
+    return Int(os_proc_available_memory())
+    #else
+    return nil
+    #endif
+  }
+
+  static func estimatedDecodedByteCount(for encodedString: String) -> Int {
+    let encodedByteCount = encodedString.utf8.count
+    guard encodedByteCount > 0 else { return 0 }
+
+    var padding = 0
+    if encodedString.hasSuffix("==") {
+      padding = 2
+    } else if encodedString.hasSuffix("=") {
+      padding = 1
+    }
+
+    return max(0, (encodedByteCount * 3 / 4) - padding)
+  }
+
+  func decode(_ encodedString: String) -> Data? {
+    let estimatedDecodedByteCount = Self.estimatedDecodedByteCount(for: encodedString)
+    if let availableMemory = availableMemoryByteCount() {
+      // 0 means the process already exceeded its memory limit.
+      if availableMemory == 0 || estimatedDecodedByteCount > availableMemory {
+        LottieLogger.shared.warn(
+          "Skipping base64 decode: estimated decoded size (\(estimatedDecodedByteCount) bytes) exceeds available memory (\(availableMemory) bytes)."
+        )
+        return nil
+      }
+    }
+
+    return Data(base64Encoded: encodedString)
   }
 
 }

@@ -61,4 +61,33 @@ final class DataURLTests: XCTestCase {
     let data = Data(dataString: dataString)
     XCTAssertNil(data, "Data should be nil as valid Data URL starts with 'data:'")
   }
+
+  func testEstimatedDecodedByteCount() {
+    XCTAssertEqual(Base64DataURLDecoder.estimatedDecodedByteCount(for: red5x5Base64), 75)
+    XCTAssertEqual(Base64DataURLDecoder.estimatedDecodedByteCount(for: ""), 0)
+  }
+
+  func testBase64DecodeSkipsWhenEstimatedSizeExceedsAvailableMemory() {
+    let decoder = Base64DataURLDecoder(availableMemoryByteCount: { 10 })
+
+    XCTAssertNil(decoder.decode(red5x5Base64))
+  }
+
+  func testBase64DecodeSucceedsWhenMemoryIsAvailable() {
+    let decoder = Base64DataURLDecoder(availableMemoryByteCount: { 1024 * 1024 })
+
+    XCTAssertNotNil(decoder.decode(red5x5Base64))
+  }
+
+  func testBase64DecodeSkipsWhenAvailableMemoryIsZero() {
+    let decoder = Base64DataURLDecoder(availableMemoryByteCount: { 0 })
+
+    XCTAssertNil(decoder.decode(red5x5Base64))
+  }
+
+  func testBase64DecodeProceedsWhenAvailableMemoryIsUnavailable() {
+    let decoder = Base64DataURLDecoder(availableMemoryByteCount: { nil })
+
+    XCTAssertNotNil(decoder.decode(red5x5Base64))
+  }
 }
